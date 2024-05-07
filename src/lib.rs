@@ -1,4 +1,4 @@
-use nom::{character::complete::one_of, IResult};
+use nom::{bytes::complete::{tag, take_until, take_while}, character::complete::one_of, sequence::terminated, IResult};
 
 //TODO: Map / sets might have to be separate.
 #[derive(Debug)]
@@ -33,7 +33,7 @@ pub fn parse(input: &str) -> IResult<&str, RespType> {
             todo!()
         }
         '$' => {
-            todo!()
+            parse_bulk_string(input)
         }
         '_' => {
             todo!()
@@ -69,7 +69,23 @@ pub fn parse(input: &str) -> IResult<&str, RespType> {
     }
 }
 
+///Parses slice into Simple String.
 fn parse_simple_string(input: &str) -> IResult<&str, RespType> {
-    let (input, value) = todo!();
+    let (input, value) = terminated(take_while(|c| c != '\r' && c != '\n'), crlf)(input)?;
     Ok((input, RespType::SString(value)))
 }
+
+///CRLF tag helper
+fn crlf(input: &str) -> IResult<&str, &str> {
+    tag("\r\n")(input)
+}
+
+fn parse_bulk_string(input: &str) -> IResult<&str, RespType> {
+    //cant contain clrf before end
+    //must end wit clrf
+    //must be correct len?
+    // Ok((input, RespType::BString(value)))
+    todo!()
+
+}
+
