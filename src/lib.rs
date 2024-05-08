@@ -1,5 +1,5 @@
 use nom::{
-    bytes::complete::{tag, take, take_while}, character::complete::{i32, i64, one_of}, combinator::eof, error::ErrorKind, sequence::terminated, IResult
+    bytes::complete::{tag, take, take_while}, character::complete::{i32, i64, one_of}, combinator::eof, sequence::terminated, IResult
 };
 
 //TODO: Map / sets might have to be separate.
@@ -11,7 +11,7 @@ pub enum RespType<'a> {
     BError,
     Array(Vec<RespType<'a>>),
     Null,
-    Bool,
+    Bool(bool),
     Double,
     BigNum,
     Int(i64),
@@ -35,9 +35,7 @@ pub fn parse_chunk(input: &str) -> IResult<&str, RespType> {
         '_' => {
             todo!()
         }
-        '#' => {
-            todo!()
-        }
+        '#' => parse_bool(input),
         ',' => {
             todo!()
         }
@@ -121,6 +119,16 @@ fn parse_array(input: &str) -> IResult<&str, RespType> {
     }
 }
 
+fn parse_bool(input: &str) -> IResult<&str, RespType> {
+    let (input, value) = terminated(one_of("tf"), crlf)(input)?;
+    let result = match value {
+        't' => true,
+        'f' => false,
+        _ => unreachable!()
+    };
+    Ok((input, RespType::Bool(result)))
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -155,5 +163,18 @@ mod tests {
     fn parse_array_test() {
         let input = "*2\r\n$5\r\nhello\r\n$5\r\nworld\r\n";
         assert_eq!(parse(input).unwrap().1, RespType::Array(vec![RespType::BString("hello"), RespType::BString("world")]));
+
+        let input = "*0\r\n";
+        assert_eq!(parse(input).unwrap().1, RespType::Array(vec![]));
+
+        let input = "*-1\r\n";
+        assert_eq!(parse(input).unwrap().1, RespType::Null);
+
+    }
+
+    #[test]
+    fn parse_bool_test() {
+        let input = "#t\r\n";
+        assert_eq!(parse(input).unwrap().1, RespType::Bool(true));
     }
 }
