@@ -1,9 +1,5 @@
 use nom::{
-    bytes::complete::{tag, take, take_while},
-    character::complete::{i32, i64, one_of},
-    combinator::eof,
-    sequence::terminated,
-    IResult,
+    bytes::complete::{tag, take, take_while}, character::complete::{i32, i64, one_of}, combinator::eof, error::ErrorKind, sequence::terminated, IResult
 };
 
 //TODO: Map / sets might have to be separate.
@@ -13,7 +9,7 @@ pub enum RespType<'a> {
     BString(&'a str),
     SError(&'a str),
     BError,
-    Array,
+    Array(Vec<RespType<'a>>),
     Null,
     Bool,
     Double,
@@ -26,13 +22,16 @@ pub enum RespType<'a> {
 }
 
 pub fn parse(input: &str) -> IResult<&str, RespType> {
+    terminated(parse_chunk, eof)(input)
+}
+pub fn parse_chunk(input: &str) -> IResult<&str, RespType> {
     let (input, resp_type) = one_of("+*-:$_#,(=%!~>")(input)?;
-    let parser = match resp_type {
-        '+' => parse_simple_string,
-        '*' => todo!(),
-        '-' => parse_simple_error,
-        ':' => parse_int,
-        '$' => parse_bulk_string,
+    match resp_type {
+        '+' => parse_simple_string(input),
+        '*' => parse_array(input),
+        '-' => parse_simple_error(input),
+        ':' => parse_int(input),
+        '$' => parse_bulk_string(input),
         '_' => {
             todo!()
         }
@@ -64,8 +63,7 @@ pub fn parse(input: &str) -> IResult<&str, RespType> {
             todo!()
         }
         _ => unreachable!(),
-    };
-    terminated(parser, eof)(input)
+    }
 }
 
 ///Parses slice into Simple String.
@@ -99,10 +97,27 @@ fn parse_int(input: &str) -> IResult<&str, RespType> {
 fn parse_bulk_string(input: &str) -> IResult<&str, RespType> {
     let (input, len) = terminated(i32, crlf)(input)?;
     if len == -1 {
-        return Ok((input, RespType::Null))
+        return Ok((input, RespType::Null));
     } else {
         let (input, value) = terminated(take(len as usize), crlf)(input)?;
         Ok((input, RespType::BString(value)))
+    }
+}
+
+fn parse_array(input: &str) -> IResult<&str, RespType> {
+    let (mut input, len) = terminated(i32, crlf)(input)?;
+    if len == -1 {
+        return Ok((input, RespType::Null));
+    } else if len < -1 {
+        return Ok((input, RespType::SError("Tried to parse negative length array.")))           
+    } else {
+        let mut result = Vec::new();
+        let mut value;
+        for _i in 0..len {
+            (input, value) = parse_chunk(input)?;
+            result.push(value)
+        }
+        Ok((input, RespType::Array(result)))
     }
 }
 
@@ -127,7 +142,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_bulk_string() {
+    fn parse_bulk_string_test() {
         let input = "$5\r\nhello\r\n";
         assert_eq!(parse(input).unwrap().1, RespType::BString("hello"));
         let input = "$-1\r\n";
@@ -136,4 +151,9 @@ mod tests {
         assert_eq!(parse(input).unwrap().1, RespType::BString(""));
     }
 
+    #[test]
+    fn parse_array_test() {
+        let input = "*2\r\n$5\r\nhello\r\n$5\r\nworld\r\n";
+        assert_eq!(parse(input).unwrap().1, RespType::Array(vec![RespType::BString("hello"), RespType::BString("world")]));
+    }
 }
