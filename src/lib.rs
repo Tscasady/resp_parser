@@ -1,5 +1,5 @@
 use nom::{
-    bytes::complete::{tag, take, take_while}, character::complete::{i32, i64, one_of}, combinator::eof, sequence::terminated, IResult
+    bytes::complete::{tag, take, take_while}, character::complete::{i32, i64, one_of}, combinator::eof, sequence::terminated, Err, IResult
 };
 
 //TODO: Map / sets might have to be separate.
@@ -21,7 +21,7 @@ pub enum RespType<'a> {
     Push,
 }
 
-pub fn parse(input: &str) -> IResult<&str, RespType> {
+pub fn parse<'a>(input: &'a str) -> IResult<&str, RespType<'a>> {
     terminated(parse_chunk, eof)(input)
 }
 pub fn parse_chunk(input: &str) -> IResult<&str, RespType> {
@@ -32,9 +32,7 @@ pub fn parse_chunk(input: &str) -> IResult<&str, RespType> {
         '-' => parse_simple_error(input),
         ':' => parse_int(input),
         '$' => parse_bulk_string(input),
-        '_' => {
-            todo!()
-        }
+        '_' => parse_null(input),
         '#' => parse_bool(input),
         ',' => {
             todo!()
@@ -107,7 +105,10 @@ fn parse_array(input: &str) -> IResult<&str, RespType> {
     if len == -1 {
         return Ok((input, RespType::Null));
     } else if len < -1 {
-        return Ok((input, RespType::SError("Tried to parse negative length array.")))           
+        return Ok((
+            input,
+            RespType::SError("Tried to parse negative length array."),
+        ));
     } else {
         let mut result = Vec::new();
         let mut value;
@@ -124,9 +125,18 @@ fn parse_bool(input: &str) -> IResult<&str, RespType> {
     let result = match value {
         't' => true,
         'f' => false,
-        _ => unreachable!()
+        _ => unreachable!(),
     };
     Ok((input, RespType::Bool(result)))
+}
+
+fn parse_null(input: &str) -> IResult<&str, RespType> {
+    let (input, value) = crlf(input)?;
+    if !input.is_empty() {
+        return Err(Err::Error(nom::error::Error {code: nom::error::ErrorKind::NonEmpty, input: "had stuff"}))
+    } else {
+        Ok((input, RespType::Null))
+    }
 }
 
 #[cfg(test)]
@@ -153,6 +163,8 @@ mod tests {
     fn parse_bulk_string_test() {
         let input = "$5\r\nhello\r\n";
         assert_eq!(parse(input).unwrap().1, RespType::BString("hello"));
+        let input = "$10\r\nhello\r\nfoo\r\n";
+        assert_eq!(parse(input).unwrap().1, RespType::BString("hello\r\nfoo"));
         let input = "$-1\r\n";
         assert_eq!(parse(input).unwrap().1, RespType::Null);
         let input = "$0\r\n\r\n";
@@ -162,19 +174,31 @@ mod tests {
     #[test]
     fn parse_array_test() {
         let input = "*2\r\n$5\r\nhello\r\n$5\r\nworld\r\n";
-        assert_eq!(parse(input).unwrap().1, RespType::Array(vec![RespType::BString("hello"), RespType::BString("world")]));
+        assert_eq!(
+            parse(input).unwrap().1,
+            RespType::Array(vec![RespType::BString("hello"), RespType::BString("world")])
+        );
 
         let input = "*0\r\n";
         assert_eq!(parse(input).unwrap().1, RespType::Array(vec![]));
 
         let input = "*-1\r\n";
         assert_eq!(parse(input).unwrap().1, RespType::Null);
-
     }
 
     #[test]
     fn parse_bool_test() {
         let input = "#t\r\n";
         assert_eq!(parse(input).unwrap().1, RespType::Bool(true));
+    }
+
+    #[test]
+    fn parse_null() {
+        let input = "_\r\n";
+        assert_eq!(parse(input).unwrap().1, RespType::Null);
+
+        let input = "_stuff\r\n";
+        assert!(parse(input).is_err());
+
     }
 }
