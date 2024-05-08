@@ -1,6 +1,6 @@
 use nom::{
-    bytes::complete::{tag, take_while},
-    character::complete::{i64, one_of},
+    bytes::complete::{tag, take, take_while},
+    character::complete::{i32, i64, one_of},
     combinator::eof,
     sequence::terminated,
     IResult,
@@ -10,7 +10,7 @@ use nom::{
 #[derive(Debug, PartialEq, Eq)]
 pub enum RespType<'a> {
     SString(&'a str),
-    BString,
+    BString(&'a str),
     SError(&'a str),
     BError,
     Array,
@@ -97,7 +97,13 @@ fn parse_int(input: &str) -> IResult<&str, RespType> {
 }
 
 fn parse_bulk_string(input: &str) -> IResult<&str, RespType> {
-    todo!()
+    let (input, len) = terminated(i32, crlf)(input)?;
+    if len == -1 {
+        return Ok((input, RespType::Null))
+    } else {
+        let (input, value) = terminated(take(len as usize), crlf)(input)?;
+        Ok((input, RespType::BString(value)))
+    }
 }
 
 #[cfg(test)]
@@ -119,4 +125,15 @@ mod tests {
         let input = ":-21\r\n";
         assert_eq!(parse(input).unwrap().1, RespType::Int(-21));
     }
+
+    #[test]
+    fn parse_bulk_string() {
+        let input = "$5\r\nhello\r\n";
+        assert_eq!(parse(input).unwrap().1, RespType::BString("hello"));
+        let input = "$-1\r\n";
+        assert_eq!(parse(input).unwrap().1, RespType::Null);
+        let input = "$0\r\n\r\n";
+        assert_eq!(parse(input).unwrap().1, RespType::BString(""));
+    }
+
 }
