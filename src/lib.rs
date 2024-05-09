@@ -1,8 +1,9 @@
 use nom::{
     branch::alt,
     bytes::complete::{tag, take, take_while},
-    character::complete::{i32, i64, one_of},
+    character::complete::{i64, one_of, u32},
     combinator::{eof, map},
+    multi::count,
     number::complete::double,
     sequence::terminated,
     IResult,
@@ -74,46 +75,23 @@ fn parse_int(input: &str) -> IResult<&str, RespType> {
     Ok((input, RespType::Int(value)))
 }
 
-fn parse_bulk_string_raw(input: &str) -> IResult<&str, RespType> {
-    let (input, len) = terminated(i32, crlf)(input)?;
-    if len == -1 {
-        return Ok((input, RespType::Null));
-    } else {
-        let (input, value) = terminated(take(len as usize), crlf)(input)?;
-        Ok((input, RespType::BString(value)))
-    }
+fn parse_bulk_string_raw(input: &str) -> IResult<&str, &str> {
+    let (input, len) = terminated(u32, crlf)(input)?;
+    let (input, value) = terminated(take(len as usize), crlf)(input)?;
+    Ok((input, value))
 }
 
 fn parse_bulk_string(input: &str) -> IResult<&str, RespType> {
     let (input, _) = tag("$")(input)?;
-    let (input, len) = terminated(i32, crlf)(input)?;
-    if len == -1 {
-        return Ok((input, RespType::Null));
-    } else {
-        let (input, value) = terminated(take(len as usize), crlf)(input)?;
-        Ok((input, RespType::BString(value)))
-    }
+    let (input, value) = parse_bulk_string_raw(input)?;
+    Ok((input, RespType::BString(value)))
 }
 
 fn parse_array(input: &str) -> IResult<&str, RespType> {
     let (input, _) = tag("*")(input)?;
-    let (mut input, len) = terminated(i32, crlf)(input)?;
-    if len == -1 {
-        return Ok((input, RespType::Null));
-    } else if len < -1 {
-        return Ok((
-            input,
-            RespType::SError("Tried to parse negative length array."),
-        ));
-    } else {
-        let mut result = Vec::new();
-        let mut value;
-        for _i in 0..len {
-            (input, value) = parse_chunk(input)?;
-            result.push(value)
-        }
-        Ok((input, RespType::Array(result)))
-    }
+    let (input, len) = terminated(u32, crlf)(input)?;
+    let (input, value) = count(parse_chunk, len as usize)(input)?;
+    Ok((input, RespType::Array(value)))
 }
 
 fn parse_bool(input: &str) -> IResult<&str, RespType> {
@@ -128,18 +106,20 @@ fn parse_bool(input: &str) -> IResult<&str, RespType> {
 }
 
 fn parse_null(input: &str) -> IResult<&str, RespType> {
-    let (input, _) = tag("_")(input)?;
-    let (input, _value) = crlf(input)?;
+    let (input, _) = terminated(alt((tag("_"), tag("$-1"), tag("*-1"))), crlf)(input)?;
     Ok((input, RespType::Null))
 }
 
 fn parse_double(input: &str) -> IResult<&str, RespType> {
     let (input, _) = tag(",")(input)?;
-    let (input, value) = terminated(alt((
-        map(tag("+inf"), |_| f64::INFINITY),
-        map(tag("-inf"), |_| f64::NEG_INFINITY),
-        double
-    )), crlf)(input)?;
+    let (input, value) = terminated(
+        alt((
+            map(tag("+inf"), |_| f64::INFINITY),
+            map(tag("-inf"), |_| f64::NEG_INFINITY),
+            double,
+        )),
+        crlf,
+    )(input)?;
     Ok((input, RespType::Double(value.to_string())))
 }
 
@@ -209,13 +189,19 @@ mod tests {
     #[test]
     fn parse_double_test() {
         let input = ",1.23\r\n";
-        assert_eq!(parse(input).unwrap().1, RespType::Double("1.23".to_string()));
+        assert_eq!(
+            parse(input).unwrap().1,
+            RespType::Double("1.23".to_string())
+        );
         let input = ",10\r\n";
         assert_eq!(parse(input).unwrap().1, RespType::Double(10.to_string()));
         let input = ",inf\r\n";
         assert_eq!(parse(input).unwrap().1, RespType::Double("inf".to_string()));
         let input = ",-inf\r\n";
-        assert_eq!(parse(input).unwrap().1, RespType::Double("-inf".to_string()));
+        assert_eq!(
+            parse(input).unwrap().1,
+            RespType::Double("-inf".to_string())
+        );
         let input = ",nan\r\n";
         assert_eq!(parse(input).unwrap().1, RespType::Double("NaN".to_string()));
     }
