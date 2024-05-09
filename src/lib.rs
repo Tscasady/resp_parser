@@ -1,8 +1,8 @@
 use nom::{
     branch::alt,
     bytes::complete::{tag, take, take_while},
-    character::complete::{i64, one_of, u32},
-    combinator::{eof, map},
+    character::complete::{digit1, i64, one_of, u32},
+    combinator::{eof, map, opt},
     multi::count,
     number::complete::double,
     sequence::terminated,
@@ -20,7 +20,7 @@ pub enum RespType<'a> {
     Null,
     Bool(bool),
     Double(String),
-    BigNum,
+    BigNum(&'a str),
     Int(i64),
     VString,
     Map,
@@ -41,6 +41,7 @@ pub fn parse_chunk<'a>(input: &'a str) -> IResult<&'a str, RespType> {
         parse_int,
         parse_null,
         parse_double,
+        parse_big_number,
     ))(input)
 }
 
@@ -121,6 +122,15 @@ fn parse_double(input: &str) -> IResult<&str, RespType> {
         crlf,
     )(input)?;
     Ok((input, RespType::Double(value.to_string())))
+}
+
+fn parse_big_number(input: &str) -> IResult<&str, RespType> {
+    let original = input;
+    let (input, _) = tag("(")(input)?;
+    let (input, sign) = opt(one_of("+-"))(input)?;
+    let (input, value) = terminated(digit1, crlf)(input)?;
+    let num_slice = &original[1..value.len() + if sign.is_some() { 2 } else { 1 }];
+    Ok((input, RespType::BigNum(num_slice)))
 }
 
 #[cfg(test)]
@@ -204,5 +214,29 @@ mod tests {
         );
         let input = ",nan\r\n";
         assert_eq!(parse(input).unwrap().1, RespType::Double("NaN".to_string()));
+    }
+
+    #[test]
+    fn parse_big_number_test() {
+        let input = "(3492890328409238509324850943850943825024385\r\n";
+        assert_eq!(
+            parse(input),
+            Ok((
+                "",
+                RespType::BigNum("3492890328409238509324850943850943825024385")
+            ))
+        );
+
+        let input = "(-3492890328409238509324850943850943825024385\r\n";
+        assert_eq!(
+            parse(input),
+            Ok((
+                "",
+                RespType::BigNum("-3492890328409238509324850943850943825024385")
+            ))
+        );
+
+        let input = "(-3492890asd328409238509324850943850943825024385\r\n";
+        assert!(parse(input).is_err());
     }
 }
