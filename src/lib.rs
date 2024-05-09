@@ -1,5 +1,11 @@
 use nom::{
-    bytes::complete::{tag, take, take_while}, character::complete::{i32, i64, one_of}, combinator::eof, sequence::terminated, Err, IResult
+    branch::alt,
+    bytes::complete::{tag, take, take_while},
+    character::complete::{i32, i64, one_of},
+    combinator::{eof, map},
+    number::complete::double,
+    sequence::terminated,
+    IResult,
 };
 
 //TODO: Map / sets might have to be separate.
@@ -12,7 +18,7 @@ pub enum RespType<'a> {
     Array(Vec<RespType<'a>>),
     Null,
     Bool(bool),
-    Double,
+    Double(String),
     BigNum,
     Int(i64),
     VString,
@@ -21,49 +27,25 @@ pub enum RespType<'a> {
     Push,
 }
 
-pub fn parse<'a>(input: &'a str) -> IResult<&str, RespType<'a>> {
+pub fn parse<'a>(input: &'a str) -> IResult<&'a str, RespType<'a>> {
     terminated(parse_chunk, eof)(input)
 }
-pub fn parse_chunk(input: &str) -> IResult<&str, RespType> {
-    let (input, resp_type) = one_of("+*-:$_#,(=%!~>")(input)?;
-    match resp_type {
-        '+' => parse_simple_string(input),
-        '*' => parse_array(input),
-        '-' => parse_simple_error(input),
-        ':' => parse_int(input),
-        '$' => parse_bulk_string(input),
-        '_' => parse_null(input),
-        '#' => parse_bool(input),
-        ',' => {
-            todo!()
-        }
-        '(' => {
-            todo!()
-        }
-        '=' => {
-            todo!()
-        }
-        '%' => {
-            todo!()
-        }
-        '!' => {
-            todo!()
-        }
-        '~' => {
-            todo!()
-        }
-        '>' => {
-            todo!()
-        }
-        '}' => {
-            todo!()
-        }
-        _ => unreachable!(),
-    }
+pub fn parse_chunk<'a>(input: &'a str) -> IResult<&'a str, RespType> {
+    alt((
+        parse_simple_string,
+        parse_bulk_string,
+        parse_array,
+        parse_simple_error,
+        parse_bool,
+        parse_int,
+        parse_null,
+        parse_double,
+    ))(input)
 }
 
 ///Parses slice into Simple String.
 fn parse_simple_string(input: &str) -> IResult<&str, RespType> {
+    let (input, _) = tag("+")(input)?;
     let (input, value) = parse_simple_string_raw(input)?;
     Ok((input, RespType::SString(value)))
 }
@@ -72,6 +54,7 @@ fn parse_simple_string(input: &str) -> IResult<&str, RespType> {
 ///Simple Errors are Simple Strings but prefixed with a '-'.
 ///By convetion they include an error type, but the parser doesn't check for this type.
 fn parse_simple_error(input: &str) -> IResult<&str, RespType> {
+    let (input, _) = tag("-")(input)?;
     let (input, value) = parse_simple_string_raw(input)?;
     Ok((input, RespType::SError(value)))
 }
@@ -86,11 +69,23 @@ fn crlf(input: &str) -> IResult<&str, &str> {
 }
 
 fn parse_int(input: &str) -> IResult<&str, RespType> {
+    let (input, _) = tag(":")(input)?;
     let (input, value) = terminated(i64, crlf)(input)?;
     Ok((input, RespType::Int(value)))
 }
 
+fn parse_bulk_string_raw(input: &str) -> IResult<&str, RespType> {
+    let (input, len) = terminated(i32, crlf)(input)?;
+    if len == -1 {
+        return Ok((input, RespType::Null));
+    } else {
+        let (input, value) = terminated(take(len as usize), crlf)(input)?;
+        Ok((input, RespType::BString(value)))
+    }
+}
+
 fn parse_bulk_string(input: &str) -> IResult<&str, RespType> {
+    let (input, _) = tag("$")(input)?;
     let (input, len) = terminated(i32, crlf)(input)?;
     if len == -1 {
         return Ok((input, RespType::Null));
@@ -101,6 +96,7 @@ fn parse_bulk_string(input: &str) -> IResult<&str, RespType> {
 }
 
 fn parse_array(input: &str) -> IResult<&str, RespType> {
+    let (input, _) = tag("*")(input)?;
     let (mut input, len) = terminated(i32, crlf)(input)?;
     if len == -1 {
         return Ok((input, RespType::Null));
@@ -121,6 +117,7 @@ fn parse_array(input: &str) -> IResult<&str, RespType> {
 }
 
 fn parse_bool(input: &str) -> IResult<&str, RespType> {
+    let (input, _) = tag("#")(input)?;
     let (input, value) = terminated(one_of("tf"), crlf)(input)?;
     let result = match value {
         't' => true,
@@ -131,12 +128,19 @@ fn parse_bool(input: &str) -> IResult<&str, RespType> {
 }
 
 fn parse_null(input: &str) -> IResult<&str, RespType> {
-    let (input, value) = crlf(input)?;
-    if !input.is_empty() {
-        return Err(Err::Error(nom::error::Error {code: nom::error::ErrorKind::NonEmpty, input: "had stuff"}))
-    } else {
-        Ok((input, RespType::Null))
-    }
+    let (input, _) = tag("_")(input)?;
+    let (input, _value) = crlf(input)?;
+    Ok((input, RespType::Null))
+}
+
+fn parse_double(input: &str) -> IResult<&str, RespType> {
+    let (input, _) = tag(",")(input)?;
+    let (input, value) = terminated(alt((
+        map(tag("+inf"), |_| f64::INFINITY),
+        map(tag("-inf"), |_| f64::NEG_INFINITY),
+        double
+    )), crlf)(input)?;
+    Ok((input, RespType::Double(value.to_string())))
 }
 
 #[cfg(test)]
@@ -146,7 +150,7 @@ mod tests {
 
     #[test]
     fn parse_simple_string_test() {
-        let input = "Ok\r\n";
+        let input = "+Ok\r\n";
         assert_eq!(
             parse_simple_string(input).unwrap().1,
             RespType::SString("Ok")
@@ -198,7 +202,21 @@ mod tests {
         assert_eq!(parse(input).unwrap().1, RespType::Null);
 
         let input = "_stuff\r\n";
+        println!("{}", parse(input).is_err());
         assert!(parse(input).is_err());
+    }
 
+    #[test]
+    fn parse_double_test() {
+        let input = ",1.23\r\n";
+        assert_eq!(parse(input).unwrap().1, RespType::Double("1.23".to_string()));
+        let input = ",10\r\n";
+        assert_eq!(parse(input).unwrap().1, RespType::Double(10.to_string()));
+        let input = ",inf\r\n";
+        assert_eq!(parse(input).unwrap().1, RespType::Double("inf".to_string()));
+        let input = ",-inf\r\n";
+        assert_eq!(parse(input).unwrap().1, RespType::Double("-inf".to_string()));
+        let input = ",nan\r\n";
+        assert_eq!(parse(input).unwrap().1, RespType::Double("NaN".to_string()));
     }
 }
