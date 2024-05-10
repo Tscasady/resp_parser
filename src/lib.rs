@@ -15,14 +15,14 @@ pub enum RespType<'a> {
     SString(&'a str),
     BString(&'a str),
     SError(&'a str),
-    BError,
+    BError(&'a str),
     Array(Vec<RespType<'a>>),
     Null,
     Bool(bool),
     Double(String),
     BigNum(&'a str),
     Int(i64),
-    VString,
+    VString(&'a str, &'a str),
     Map,
     Set,
     Push,
@@ -35,6 +35,7 @@ pub fn parse_chunk<'a>(input: &'a str) -> IResult<&'a str, RespType> {
     alt((
         parse_simple_string,
         parse_bulk_string,
+        parse_bulk_error,
         parse_array,
         parse_simple_error,
         parse_bool,
@@ -42,6 +43,7 @@ pub fn parse_chunk<'a>(input: &'a str) -> IResult<&'a str, RespType> {
         parse_null,
         parse_double,
         parse_big_number,
+        parse_v_string,
     ))(input)
 }
 
@@ -88,6 +90,12 @@ fn parse_bulk_string(input: &str) -> IResult<&str, RespType> {
     Ok((input, RespType::BString(value)))
 }
 
+fn parse_bulk_error(input: &str) -> IResult<&str, RespType> {
+    let (input, _) = tag("!")(input)?;
+    let (input, value) = parse_bulk_string_raw(input)?;
+    Ok((input, RespType::BError(value)))
+}
+
 fn parse_array(input: &str) -> IResult<&str, RespType> {
     let (input, _) = tag("*")(input)?;
     let (input, len) = terminated(u32, crlf)(input)?;
@@ -131,6 +139,15 @@ fn parse_big_number(input: &str) -> IResult<&str, RespType> {
     let (input, value) = terminated(digit1, crlf)(input)?;
     let num_slice = &original[1..value.len() + if sign.is_some() { 2 } else { 1 }];
     Ok((input, RespType::BigNum(num_slice)))
+}
+
+fn parse_v_string(input: &str) -> IResult<&str, RespType> {
+    let (input, _) = tag("=")(input)?;
+    let (input, len) = terminated(u32, crlf)(input)?;
+    let (input, encoding) = terminated(take(3 as usize), tag(":"))(input)?;
+    let (input, value) = terminated(take(len - 4), crlf)(input)?;
+    Ok((input, RespType::VString(encoding, value)))
+
 }
 
 #[cfg(test)]
@@ -238,5 +255,11 @@ mod tests {
 
         let input = "(-3492890asd328409238509324850943850943825024385\r\n";
         assert!(parse(input).is_err());
+    }
+
+    #[test]
+    fn parse_v_string_test() {
+        let input = "=15\r\ntxt:Some string\r\n";
+        assert_eq!(parse(input), Ok(("", RespType::VString("txt", "Some string"))));
     }
 }
