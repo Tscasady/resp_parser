@@ -9,24 +9,8 @@ use nom::{
     IResult,
 };
 
-//TODO: Map / sets might have to be separate.
-#[derive(Debug, PartialEq, Eq)]
-pub enum RespType<'a> {
-    SString(&'a str),
-    BString(&'a str),
-    SError(&'a str),
-    BError(&'a str),
-    Array(Vec<RespType<'a>>),
-    Null,
-    Bool(bool),
-    Double(String),
-    BigNum(&'a str),
-    Int(i64),
-    VString(&'a str, &'a str),
-    Map,
-    Set,
-    Push,
-}
+mod resp_type;
+pub use resp_type::{Command, RespType};
 
 pub fn parse<'a>(input: &'a str) -> IResult<&'a str, RespType<'a>> {
     terminated(parse_chunk, eof)(input)
@@ -103,6 +87,11 @@ fn parse_array(input: &str) -> IResult<&str, RespType> {
     Ok((input, RespType::Array(value)))
 }
 
+// fn parse_command(input: &str) -> IResult<&str, RespType> {
+//     let (_, command) = opt(alt((tag_no_case("ping"), tag_no_case("echo"))))(input)?;
+//     Ok(input, command)
+// }
+
 fn parse_bool(input: &str) -> IResult<&str, RespType> {
     let (input, _) = tag("#")(input)?;
     let (input, value) = terminated(one_of("tf"), crlf)(input)?;
@@ -147,7 +136,6 @@ fn parse_v_string(input: &str) -> IResult<&str, RespType> {
     let (input, encoding) = terminated(take(3 as usize), tag(":"))(input)?;
     let (input, value) = terminated(take(len - 4), crlf)(input)?;
     Ok((input, RespType::VString(encoding, value)))
-
 }
 
 #[cfg(test)]
@@ -260,6 +248,9 @@ mod tests {
     #[test]
     fn parse_v_string_test() {
         let input = "=15\r\ntxt:Some string\r\n";
-        assert_eq!(parse(input), Ok(("", RespType::VString("txt", "Some string"))));
+        assert_eq!(
+            parse(input),
+            Ok(("", RespType::VString("txt", "Some string")))
+        );
     }
 }
