@@ -47,6 +47,7 @@ fn parse_simple_error(input: &str) -> IResult<&str, RespType> {
     Ok((input, RespType::SError(value)))
 }
 
+///Simple string helper.
 fn parse_simple_string_raw(input: &str) -> IResult<&str, &str> {
     terminated(take_while(|c| c != '\r' && c != '\n'), crlf)(input)
 }
@@ -56,12 +57,14 @@ fn crlf(input: &str) -> IResult<&str, &str> {
     tag("\r\n")(input)
 }
 
+///Parses slice into an i64.
 fn parse_int(input: &str) -> IResult<&str, RespType> {
     let (input, _) = tag(":")(input)?;
     let (input, value) = terminated(i64, crlf)(input)?;
     Ok((input, RespType::Int(value)))
 }
 
+///Bulk string helper.
 fn parse_bulk_string_raw(input: &str) -> IResult<&str, &str> {
     let (input, len) = terminated(u32, crlf)(input)?;
     let (input, value) = terminated(take(len as usize), crlf)(input)?;

@@ -22,32 +22,36 @@ pub enum RespType<'a> {
 pub enum Command<'a> {
     Ping,
     Echo { args: Vec<RespType<'a>> },
+    Set,
+    Get,
 }
 
 impl<'a> RespType<'a> {
-    pub fn to_command(self) -> Command<'a> {
+    pub fn to_command(self) -> Result<Command<'a>, String> {
         match self {
             RespType::Array(args) => match args[0] {
                 RespType::BString(command) => {
                     match command.to_lowercase().as_str() {
-                        "ping" => Command::Ping,
-                        "echo" => Command::Echo { args: args[1..].to_vec()},
-                        _ => panic!("Not a known command: {}", command)
+                        "ping" => Ok(Command::Ping),
+                        "echo" => Ok(Command::Echo { args: args[1..].to_vec()}),
+                        _ => Err(format!("Not a known command: {}", command))
                     }
                 }
-                _ => panic!("First element of Array must be a bulk String in order to be a command. Given {:?}", args[0])
+                _ => Err(format!("First element of Array must be a bulk String in order to be a command. Given {:?}", args[0]))
             },
-            _ => panic!("Only RespType::Array can be converted to commands.")
+            _ => Err(format!("Only RespType::Array can be converted to commands."))
         }
     }
 
     pub fn inner(&self) -> &'a str {
         match self {
             RespType::BString(value) => value,
+            RespType::SString(value) => value,
             _ => unimplemented!(),
         }
     }
 }
+
 
 // pub fn to_command<'a>(value: RespType<'a>) -> Result<Command<'a>, String> {
 //     match value {
