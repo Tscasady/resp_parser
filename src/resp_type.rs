@@ -32,12 +32,12 @@ impl<'a> RespType<'a> {
                     match command.to_lowercase().as_str() {
                         "ping" => Ok(Command::Ping),
                         "echo" => Ok(Command::Echo { args: args[1..].to_vec()}),
-                        _ => Err(format!("Not a known command: {}", command))
+                        _ => panic!("Not a known command: {}", command)
                     }
                 }
-                _ => Err(format!("First element of Array must be a bulk String in order to be a command. Given {:?}", args[0]))
+                _ => panic!("First element of Array must be a bulk String in order to be a command. Given {:?}", args[0])
             },
-            _ => Err("Only RespType::Array can be converted to commands.".to_string())
+            _ => panic!("Only RespType::Array can be converted to commands.")
         }
     }
 
