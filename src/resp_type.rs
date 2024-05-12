@@ -33,6 +33,8 @@ impl<'a> RespType<'a> {
                 RespType::BString(command) => {
                     match command.to_lowercase().as_str() {
                         "ping" => Ok(Command::Ping),
+                        "set" => Ok(Command::Set { args: args[1..].to_vec()}),
+                        "get" => Ok(Command::Set { args: args[1..].to_vec()}),
                         "echo" => Ok(Command::Echo { args: args[1..].to_vec()}),
                         _ => Err(format!("Not a known command: {}", command))
                     }
