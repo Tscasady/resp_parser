@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum RespType<'a> {
     SString(&'a str),
     BString(&'a str),
@@ -21,21 +21,30 @@ pub enum RespType<'a> {
 #[derive(PartialEq, Eq, Debug)]
 pub enum Command<'a> {
     Ping,
-    Echo { args: Vec<RespType<'a>> },
-    Set { args: Vec<RespType<'a>>},
-    Get { args: Vec<RespType<'a>>},
+    Echo {
+        args: Vec<RespType<'a>>,
+    },
+    Set {
+        key: String,
+        value: String,
+        px: Option<u64>,
+    },
+    Get {
+        args: Vec<RespType<'a>>,
+    },
 }
 
 impl<'a> RespType<'a> {
     pub fn to_command(self) -> Result<Command<'a>, String> {
         match self {
-            RespType::Array(args) => match args[0] {
+            RespType::Array(mut args) => match args[0] {
                 RespType::BString(command) => {
                     match command.to_lowercase().as_str() {
                         "ping" => Ok(Command::Ping),
-                        "set" => Ok(Command::Set { args: args[1..].to_vec()}),
-                        "get" => Ok(Command::Get { args: args[1..].to_vec()}),
-                        "echo" => Ok(Command::Echo { args: args[1..].to_vec()}),
+                        "set" => { let px = args.get(3).map(|resptype| resptype.inner().parse::<u64>().expect("Set command px value should be able to be parsed to u64."));
+                            Ok(Command::Set { key: args[1].inner().to_string(), value: args[2].inner().to_string(), px})},
+                        "get" => Ok(Command::Get { args: args.drain(1..).collect() }),
+                        "echo" => Ok(Command::Echo { args: args.drain(1..).collect()}),
                         _ => Err(format!("Not a known command: {}", command))
                     }
                 }
@@ -53,4 +62,3 @@ impl<'a> RespType<'a> {
         }
     }
 }
-
