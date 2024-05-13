@@ -41,7 +41,7 @@ impl<'a> RespType<'a> {
                 RespType::BString(command) => {
                     match command.to_lowercase().as_str() {
                         "ping" => Ok(Command::Ping),
-                        "set" => { let px = args.get(3).map(|resptype| resptype.inner().parse::<u64>().expect("Set command px value should be able to be parsed to u64."));
+                        "set" => { let px = args.get(4).map(|resptype| resptype.inner().parse::<u64>().expect("Set command px value should be able to be parsed to u64."));
                             Ok(Command::Set { key: args[1].inner().to_string(), value: args[2].inner().to_string(), px})},
                         "get" => Ok(Command::Get { args: args.drain(1..).collect() }),
                         "echo" => Ok(Command::Echo { args: args.drain(1..).collect()}),
