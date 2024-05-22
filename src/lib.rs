@@ -10,7 +10,9 @@ use nom::{
 };
 
 mod resp_type;
-pub use resp_type::{Command, RespType};
+// mod command;
+pub use resp_type::RespType;
+// pub use crate::command::Command;
 
 pub fn parse<'a>(input: &'a str) -> IResult<&'a str, RespType<'a>> {
     terminated(parse_chunk, eof)(input)
@@ -89,11 +91,6 @@ fn parse_array(input: &str) -> IResult<&str, RespType> {
     let (input, value) = count(parse_chunk, len as usize)(input)?;
     Ok((input, RespType::Array(value)))
 }
-
-// fn parse_command(input: &str) -> IResult<&str, RespType> {
-//     let (_, command) = opt(alt((tag_no_case("ping"), tag_no_case("echo"))))(input)?;
-//     Ok(input, command)
-// }
 
 fn parse_bool(input: &str) -> IResult<&str, RespType> {
     let (input, _) = tag("#")(input)?;
